@@ -34,12 +34,12 @@ clear Ft_nb P f;
 
 note_max_ind = floor((length(nb_base)-2)/(ZERO_FREQ/note_freq));
 while note_max_ind > WINDOW_LEN*WINDOW_OVERLAP*Fs
-    cprintf('Errors', 'Error: desired zero frequency exceeds window overlap\n')
+    fprintf('Error: desired zero frequency exceeds window overlap\n')
     ZERO_FREQ = ZERO_FREQ * 2^(1/12);
     N = N - 1;
     note_max_ind = floor((length(nb_base)-2)/(ZERO_FREQ/note_freq));
 end
-cprintf('*Blue', 'Beginning calculation with zero frequency %.2f, and N=%d\n', ZERO_FREQ, N)
+fprintf('Beginning calculation with zero frequency %.2f, and N=%d\n', ZERO_FREQ, N)
 
 nb_fs = @(t)(linearApproximation(nb_base, t*Fnb*(ZERO_FREQ/note_freq)+1));
 note = @(i,t)...
@@ -182,18 +182,3 @@ for i = 1:size(playtimes,2)
     ts = playtimes(i);
     appr2(ts:ts+note_max_ind) = appr2(ts:ts+note_max_ind) + noteref*playvals(:,i);
 end
-
-
-% s = floor(Fs/STARTS_PER_SEC);
-% for i = N:-1:1
-%     last_seg = ceil(ceil((note_max_ind+1)/2^((i-1)/12))/s);
-%     playvals_add = zeros(N, last_seg);
-%     playvals_add(i,1) = 1;
-%     playvals = [playvals_add playvals];
-% end
-% 
-% appr3 = zeros(int64((size(playvals,2)-1)*s+note_max_ind+1),1);
-% 
-% for i = 1:size(playvals, 2)
-%     appr3((i-1)*s+1:(i-1)*s+note_max_ind+1,:) = appr3((i-1)*s+1:(i-1)*s+note_max_ind+1,:) + noteref*playvals(:,i);
-% end

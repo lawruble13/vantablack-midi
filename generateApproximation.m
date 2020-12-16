@@ -73,7 +73,7 @@ lastlen = 0;
 playvals = zeros(N, int64(ceil(SONG_MAX/s)));
 xot = 0;
 for cur_seg = 1:n_segs
-    cprintf('*Red','Starting segment %d\n',cur_seg);
+    fprintf('Starting segment %d\n',cur_seg);
     [song,Fs] = audioread(filename, [(cur_seg-1)*segment_len+1, min(cur_seg*segment_len, SONG_MAX)]);
     song = song(:,1);
     song = song - appr2((cur_seg-1)*segment_len+1:(cur_seg-1)*segment_len+length(song));
@@ -105,7 +105,7 @@ for cur_seg = 1:n_segs
                 if(lastpercent > 0)
                     timerVal = toc;
                 end
-                cprintf('*Black','(%d/%d) ',cur_seg, n_segs);
+                fprintf('(%d/%d) ',cur_seg, n_segs);
                 fprintf("Calculating: %d%%", lastpercent);
                 if(timerVal > 0)
                     fprintf("(ETA: %.2fs, elapsed: %.2fs)...",((totalWork-doneWork)/doneWork)*timerVal,timerVal);
