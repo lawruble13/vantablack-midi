@@ -13,7 +13,7 @@ note_filename = 'bass.wav';
 % The length of the sequential segments, in seconds
 segment_len = 1;
 % The width of the patch segments, in seconds (<= segment_len)
-patch_width = 1;
+patch_width = 4/3;
 % The desired frequency of the lowest note, in Hz (27.5 = A0)
 zero_freq = 27.5;
 % The desired number of different notes
@@ -21,22 +21,42 @@ num_notes = 88;
 % The rate to play notes at, in Hz
 play_rate = 64;
 
-%% Process the requested song
-% Defines variables: Fs, n_seq_seg, song_max
+%% Load the requested song
+% Defines variables: Fs, song
 % Clears variables: none
 
 % Read the target song audio file
 [song, Fs] = audioread(append('Song Inputs/', song_filename));
 % Convert the song to mono audio
 song = sum(song, 2)/size(song, 2);
-% Pad the end of the song so there are a whole number of sequential
-% segments to iterate over
-n_seq_seg = ceil(size(song, 1)/(segment_len*Fs));
-song(end+1:n_seq_seg*segment_len*Fs,:) = 0;
-song_max = size(song, 1);
-% Store the song to a temporary file, then release the used memory
-audiowrite('target.wav', song, Fs);
-% clear song;
+
+%% Determine the playtime offsets for segments and patches
+% Defines variables: actual_samples_per_seg, seg_offsets,
+% actual_samples_before_patch, patch_offsets
+% Clears variables: none
+desired_samples_per_play = Fs / play_rate;
+actual_samples_per_play = floor(desired_samples_per_play);
+
+desired_samples_per_seg = Fs * segment_len;
+actual_plays_per_seg = ceil(desired_samples_per_seg / actual_samples_per_play);
+actual_samples_per_seg = actual_samples_per_play * actual_plays_per_seg;
+
+seg_offsets = (0:actual_plays_per_seg-1)*actual_samples_per_play;
+
+desired_patch_offset = (segment_len - patch_width/2)*Fs;
+actual_plays_before_patch = floor(desired_patch_offset / actual_samples_per_play);
+actual_samples_before_patch = actual_plays_before_patch * actual_samples_per_play;
+desired_plays_per_patch = 2*(actual_samples_per_seg-actual_plays_before_patch);
+actual_plays_per_patch = min(desired_plays_per_patch, actual_plays_per_seg);
+actual_samples_per_patch = actual_plays_per_patch * actual_samples_per_play;
+
+patch_offsets = (0:actual_plays_per_patch-1)*actual_samples_per_play;
+clear desired*
+
+%% Adjust the song to be a whole number of sequential segments
+n_seq_seg = ceil(length(song)/actual_samples_per_seg);
+song(end+1:n_seq_seg*actual_samples_per_seg) = 0;
+song_max = length(song);
 
 %% Process the requested note
 % Defines variables: note, Fsn, note_freq
@@ -68,9 +88,8 @@ clear note_fft note_fd_pow f f_ind;
 % Defines variables: none
 % Clears variables: none
 
-% Determine the minimum frequency so the whole note fits within half of the
-% patch
-max_len_ratio = (Fs*patch_width/2)/length(note);
+% Determine the minimum frequency so the whole note fits within the patch
+max_len_ratio = (actual_samples_per_patch/2)/length(note);
 max_semitones_down = log(max_len_ratio) / log(2^(1/12));
 min_freq = 2^(-max_semitones_down/12) * note_freq;
 % If they requested a lower frequency than is possible, let them know, and
@@ -113,22 +132,6 @@ for i=1:num_notes
 end
 clear note note_linapp note_eqtime note_valtime note_ps t i j note_freq Fsn zero_freq
 
-%% Determine the overall playtimes 
-samples_per_seg = Fs*segment_len;
-plays_per_seg = ceil(segment_len*play_rate);
-samples_per_patch = Fs*patch_width;
-samples_per_play = samples_per_seg/plays_per_seg;
-playtimes = 1:samples_per_play:song_max;
-seg_left = 1;
-seg_right = samples_per_seg;
-seg_offsets = floor(playtimes(seg_left <= playtimes & playtimes < seg_right))-seg_left;
-plays_per_patch = ceil(samples_per_patch/samples_per_play);
-samples_per_patch = samples_per_play*plays_per_patch;
-patch_left = samples_per_seg-(samples_per_patch/2)+1;
-patch_right = patch_left + samples_per_patch-1-note_max_ind;
-patch_offsets = floor(playtimes(patch_left <= playtimes & playtimes < patch_right))-patch_left;
-patch_ind_offset = find(patch_left <= playtimes, 1);
-
 %% Calculate the OLS matrix for the segments
 % Calculate the number of items per play
 items_per_play = 0;
@@ -155,7 +158,7 @@ for n=1:num_notes
 end
 X = sparse(row, col, val);
 clear row col val;
-Xs = full(X(1:samples_per_seg,:));
+Xs = full(X(1:actual_samples_per_seg,:));
 beta_mul = ((Xs'*Xs)\Xs');
 clear Xs;
 
@@ -167,7 +170,7 @@ clear beta_mul song_segs
 %% Calculate approximation before patches
 approximation = zeros(length(song)+note_max_ind, 1);
 for i=1:n_seq_seg
-    seg_left = samples_per_seg*(i-1)+1;
+    seg_left = actual_samples_per_seg*(i-1)+1;
     seg_appr = X*playvals(:,i);
     approximation(seg_left:seg_left-1+length(seg_appr)) = approximation(seg_left:seg_left-1+length(seg_appr)) + seg_appr;
     clear seg_appr;
@@ -189,30 +192,33 @@ added_items = 0;
 for n=1:num_notes
     for i=1:length(patch_offsets)
         t_max = ceil((note_max_ind+1)/2^(n/12));
-        for t = 1:t_max
-            row(added_items+t) = patch_offsets(i) + t;
-            col(added_items+t) = (n-1)*length(patch_offsets) + i;
-            val(added_items+t) = noteref(t, n);
+        if patch_offsets(i) + note_max_ind < actual_samples_per_patch
+            for t = 1:t_max
+                row(added_items+t) = patch_offsets(i) + t;
+                col(added_items+t) = (n-1)*length(patch_offsets) + i;
+                val(added_items+t) = noteref(t, n);
+            end
+            added_items = added_items + t_max;
         end
-        added_items = added_items + t_max;
     end
 end
+row = row(1:added_items);
+col = col(1:added_items);
+val = val(1:added_items);
+
 X = sparse(row, col, val);
 clear row col val;
-if size(X,1) < samples_per_patch
-    Xs = full(X);
-    Xs(end+1:samples_per_patch,:) = 0;
-else
-    Xs = full(X(1:samples_per_patch,:));
-end 
+Xs = full(X);
+Xs(end+1:actual_samples_per_patch,:) = 0;
+
 beta_mul = ((Xs'*Xs)\Xs');
 clear Xs;
 
 %%
 error = song-approximation(1:length(song));
-error = error(samples_per_seg-(samples_per_patch/2)+1:end);
-error = error(1:samples_per_patch*(n_seq_seg-1));
-error_segs = reshape(error, [], n_seq_seg-1);
+error = error(actual_samples_before_patch+1:end);
+error = error(1:actual_samples_per_patch*(n_seq_seg-1));
+error_segs = reshape(error, actual_samples_per_patch, n_seq_seg-1);
 clear error;
 playvals=beta_mul*error_segs;
 
@@ -221,9 +227,10 @@ clear beta_mul;
 %% Calculate approximation after patches
 approximation_patch = zeros(length(song)+note_max_ind, 1);
 for i=1:n_seq_seg-1
-    seg_left = samples_per_seg*(i-1)+samples_per_seg-(samples_per_patch)/2+1;
-    seg_appr = X*playvals(:,i);
-    approximation_patch(seg_left:seg_left-1+length(seg_appr)) = approximation_patch(seg_left:seg_left-1+length(seg_appr)) + seg_appr;
+    patch_left = actual_samples_per_seg*(i-1)+actual_samples_before_patch + 1;
+    patch_right = patch_left - 1 + size(X, 1);
+    patch_appr = X*playvals(:,i);
+    approximation_patch(patch_left:patch_right) = approximation_patch(patch_left:patch_right) + patch_appr;
     clear seg_appr;
 end
 
